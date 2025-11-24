@@ -30,7 +30,8 @@ urlpatterns = [
     
     # API
     path('api/', include(router.urls)),
-    path('api/auth/', include('rest_framework.urls')),
+    path('api/users/', include('user.urls')),
+    # path('api/auth/', include('rest_framework.urls')),
     
     # API Documentation
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

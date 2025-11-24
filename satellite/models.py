@@ -2,6 +2,7 @@ from django.contrib.gis.db import models
 from django.contrib.auth.models import User
 from django.core.validators import FileExtensionValidator, MinValueValidator, MaxValueValidator
 from django.utils import timezone
+from django.conf import settings
 import os
 
 
@@ -48,7 +49,7 @@ class SatelliteImage(models.Model):
     )
     upload_date = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_date = models.DateTimeField(auto_now=True)
-    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     
     # Image properties
     resolution = models.FloatField(
@@ -176,7 +177,7 @@ class AnalysisResult(models.Model):
     
     # Analyst information
     initiated_by = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True
@@ -275,7 +276,7 @@ class ThreatDetection(models.Model):
     # Status tracking
     verified = models.BooleanField(default=False)
     verified_by = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
@@ -286,7 +287,7 @@ class ThreatDetection(models.Model):
     # Response tracking
     acknowledged = models.BooleanField(default=False)
     acknowledged_by = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

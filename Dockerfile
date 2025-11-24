@@ -1,5 +1,4 @@
-
-FROM ghcr.io/osgeo/gdal:ubuntu-small-3.10.1
+FROM ghcr.io/osgeo/gdal:ubuntu-small-3.11.1
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -24,6 +23,7 @@ RUN apt-get update && apt-get install -y \
     libtiff-dev \
     libgeos-dev \
     libproj-dev \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Set work directory
@@ -41,17 +41,19 @@ RUN pip install -r requirements.txt
 # Copy project
 COPY . .
 
+# Copy and set permissions for entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Create necessary directories
 RUN mkdir -p /app/media/satellite/original \
     /app/media/satellite/optimized \
     /app/media/satellite/thumbnails \
+    /app/media/avatars \
     /app/staticfiles \
     /app/logs
 
-# Collect static files
-RUN python manage.py collectstatic --noinput
-
-# Create non-root user (check if user exists first, if not create with different UID)
+# Create non-root user
 RUN if id 1000 >/dev/null 2>&1; then \
         echo "User with UID 1000 already exists, using existing user"; \
         EXISTING_USER=$(id -nu 1000); \
@@ -67,4 +69,5 @@ USER 1000
 
 EXPOSE 8000
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "4", "--timeout", "120", "config.wsgi:application"]
