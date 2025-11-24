@@ -1,5 +1,4 @@
 from django.contrib.gis.db import models
-from django.contrib.auth.models import User
 from django.core.validators import FileExtensionValidator, MinValueValidator, MaxValueValidator
 from django.utils import timezone
 from django.conf import settings
@@ -49,7 +48,12 @@ class SatelliteImage(models.Model):
     )
     upload_date = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_date = models.DateTimeField(auto_now=True)
-    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.SET_NULL, 
+        null=True,
+        related_name='uploaded_satellite_images'
+    )
     
     # Image properties
     resolution = models.FloatField(
@@ -99,14 +103,23 @@ class SatelliteImage(models.Model):
     def delete(self, *args, **kwargs):
         """Override delete to remove associated files"""
         if self.original_image:
-            if os.path.isfile(self.original_image.path):
-                os.remove(self.original_image.path)
+            try:
+                if os.path.isfile(self.original_image.path):
+                    os.remove(self.original_image.path)
+            except Exception:
+                pass
         if self.optimized_image:
-            if os.path.isfile(self.optimized_image.path):
-                os.remove(self.optimized_image.path)
+            try:
+                if os.path.isfile(self.optimized_image.path):
+                    os.remove(self.optimized_image.path)
+            except Exception:
+                pass
         if self.thumbnail:
-            if os.path.isfile(self.thumbnail.path):
-                os.remove(self.thumbnail.path)
+            try:
+                if os.path.isfile(self.thumbnail.path):
+                    os.remove(self.thumbnail.path)
+            except Exception:
+                pass
         super().delete(*args, **kwargs)
 
 
@@ -180,7 +193,8 @@ class AnalysisResult(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
-        blank=True
+        blank=True,
+        related_name='initiated_analyses'
     )
     
     class Meta:

@@ -9,26 +9,29 @@ class SatelliteImageListSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
     thumbnail_url = serializers.SerializerMethodField()
     bounds = serializers.SerializerMethodField()
+    uploaded_by_email = serializers.EmailField(source='uploaded_by.email', read_only=True)
     
     class Meta:
         model = SatelliteImage
         fields = [
             'id', 'name', 'upload_date', 'acquisition_date', 'status',
             'analyzed', 'analysis_count', 'image_url', 'thumbnail_url',
-            'bounds', 'resolution', 'file_size'
+            'bounds', 'resolution', 'file_size', 'uploaded_by_email'
         ]
         read_only_fields = fields
     
     def get_image_url(self, obj):
-        if obj.optimized_image:
-            return self.context['request'].build_absolute_uri(obj.optimized_image.url)
-        elif obj.original_image:
-            return self.context['request'].build_absolute_uri(obj.original_image.url)
+        request = self.context.get('request')
+        if obj.optimized_image and request:
+            return request.build_absolute_uri(obj.optimized_image.url)
+        elif obj.original_image and request:
+            return request.build_absolute_uri(obj.original_image.url)
         return None
     
     def get_thumbnail_url(self, obj):
-        if obj.thumbnail:
-            return self.context['request'].build_absolute_uri(obj.thumbnail.url)
+        request = self.context.get('request')
+        if obj.thumbnail and request:
+            return request.build_absolute_uri(obj.thumbnail.url)
         return None
     
     def get_bounds(self, obj):
@@ -42,7 +45,7 @@ class SatelliteImageDetailSerializer(serializers.ModelSerializer):
     thumbnail_url = serializers.SerializerMethodField()
     bounds = serializers.SerializerMethodField()
     center = serializers.SerializerMethodField()
-    uploaded_by_username = serializers.CharField(source='uploaded_by.username', read_only=True)
+    uploaded_by_email = serializers.EmailField(source='uploaded_by.email', read_only=True)
     
     class Meta:
         model = SatelliteImage
@@ -55,15 +58,17 @@ class SatelliteImageDetailSerializer(serializers.ModelSerializer):
         ]
     
     def get_image_url(self, obj):
-        if obj.optimized_image:
-            return self.context['request'].build_absolute_uri(obj.optimized_image.url)
-        elif obj.original_image:
-            return self.context['request'].build_absolute_uri(obj.original_image.url)
+        request = self.context.get('request')
+        if obj.optimized_image and request:
+            return request.build_absolute_uri(obj.optimized_image.url)
+        elif obj.original_image and request:
+            return request.build_absolute_uri(obj.original_image.url)
         return None
     
     def get_thumbnail_url(self, obj):
-        if obj.thumbnail:
-            return self.context['request'].build_absolute_uri(obj.thumbnail.url)
+        request = self.context.get('request')
+        if obj.thumbnail and request:
+            return request.build_absolute_uri(obj.thumbnail.url)
         return None
     
     def get_bounds(self, obj):
@@ -117,7 +122,7 @@ class AnalysisResultSerializer(serializers.ModelSerializer):
     image_name = serializers.CharField(source='satellite_image.name', read_only=True)
     analysis_type_display = serializers.CharField(source='get_analysis_type_display', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
-    initiated_by_username = serializers.CharField(source='initiated_by.username', read_only=True)
+    initiated_by_email = serializers.EmailField(source='initiated_by.email', read_only=True)
     
     class Meta:
         model = AnalysisResult
@@ -126,7 +131,7 @@ class AnalysisResultSerializer(serializers.ModelSerializer):
             'analysis_type_display', 'status', 'status_display',
             'created_at', 'started_at', 'completed_at', 'summary',
             'raw_data', 'confidence_score', 'threat_count',
-            'processing_time', 'error_message', 'initiated_by_username',
+            'processing_time', 'error_message', 'initiated_by_email',
             'detections', 'logs'
         ]
         read_only_fields = [
