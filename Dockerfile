@@ -14,9 +14,6 @@ RUN apt-get update && apt-get install -y \
     postgresql-client \
     libpq-dev \
     build-essential \
-    libgdal-dev \
-    gdal-bin \
-    python3-gdal \
     libspatialindex-dev \
     libjpeg-dev \
     libpng-dev \
