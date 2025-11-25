@@ -132,12 +132,17 @@ class ImageOptimizer:
                 'blockxsize': 512,
                 'blockysize': 512,
                 'compress': compression,
-                'photometric': 'YCbCr' if compression == 'JPEG' else None,
                 'BIGTIFF': 'IF_SAFER',
             }
             
-            if compression == 'JPEG':
+            # Only set photometric for JPEG compression if we have 3 bands
+            if compression == 'JPEG' and self.src_dataset.count >= 3:
+                cog_profile['photometric'] = 'YCbCr'
                 cog_profile['jpeg_quality'] = quality
+            elif compression == 'JPEG':
+                # For single or 2-band images, use no photometric interpretation with JPEG
+                # JPEG compression with photometric YCbCr requires exactly 3 bands
+                cog_profile['compress'] = 'DEFLATE'  # Use DEFLATE for non-RGB images
             
             # Update with source dataset profile
             profile = self.src_dataset.profile.copy()
@@ -164,7 +169,7 @@ class ImageOptimizer:
             return True
         
         except Exception as e:
-            logger.error(f"Error creating COG: {str(e)}")
+            logger.error(f"Error creating COG: {str(e)}", exc_info=True)
             return False
     
     def create_thumbnail(self, max_size: Tuple[int, int] = (400, 400), 
@@ -248,15 +253,24 @@ def optimize_satellite_image_file(satellite_image_instance) -> bool:
     from ..models import SatelliteImage
     
     try:
+        logger.info(f"Starting optimization for image {satellite_image_instance.id}: {satellite_image_instance.name}")
+        
         # Update status
         satellite_image_instance.status = 'processing'
         satellite_image_instance.save(update_fields=['status'])
         
         input_path = satellite_image_instance.original_image.path
+        logger.info(f"Input image path: {input_path}")
+        
+        if not os.path.exists(input_path):
+            raise Exception(f"Input image file not found: {input_path}")
         
         with ImageOptimizer(input_path) as optimizer:
             # Extract metadata
+            logger.info("Extracting metadata from image...")
             metadata = optimizer.get_image_metadata()
+            logger.info(f"Metadata extracted: {metadata}")
+            
             satellite_image_instance.width = metadata['width']
             satellite_image_instance.height = metadata['height']
             satellite_image_instance.bands = metadata['bands']
@@ -264,23 +278,42 @@ def optimize_satellite_image_file(satellite_image_instance) -> bool:
             satellite_image_instance.file_size = os.path.getsize(input_path)
             
             # Get geographic bounds
+            logger.info("Calculating geographic bounds...")
             bounds, center = optimizer.get_geographic_bounds()
             satellite_image_instance.bounds = bounds
             satellite_image_instance.center_point = center
+            logger.info(f"Bounds calculated: {bounds}")
             
             # Create COG
+            logger.info("Creating COG (Cloud-Optimized GeoTIFF)...")
             cog_filename = f"cog_{Path(input_path).stem}.tif"
-            cog_dir = Path(satellite_image_instance.original_image.field.upload_to) / 'optimized'
-            cog_path = Path(satellite_image_instance.original_image.storage.location) / cog_dir / cog_filename
+            # Store in the optimized_image upload_to directory with a simpler path
+            # Use just the filename, Django will handle the upload_to prefix
+            cog_relative_path = cog_filename
+            
+            # Get the actual file system path using the field's storage
+            storage = satellite_image_instance.optimized_image.storage
+            cog_dir_name = 'satellite/optimized'  # Match the upload_to prefix
+            
+            # Create the full path for writing
+            import datetime
+            today = datetime.date.today()
+            cog_full_dir = os.path.join(storage.location, cog_dir_name, str(today.year), f'{today.month:02d}')
+            cog_path = os.path.join(cog_full_dir, cog_filename)
+            
+            logger.info(f"COG output path: {cog_path}")
+            logger.info(f"COG directory exists: {os.path.exists(os.path.dirname(cog_path))}")
             
             if optimizer.create_cog(str(cog_path)):
-                # Save COG reference
-                relative_path = str(cog_dir / cog_filename)
+                # Save COG reference with proper relative path (including year/month)
+                relative_path = f'{cog_dir_name}/{today.year}/{today.month:02d}/{cog_filename}'
                 satellite_image_instance.optimized_image.name = relative_path
+                logger.info(f"COG created successfully at {cog_path}, relative path: {relative_path}")
             else:
                 raise Exception("Failed to create COG")
             
             # Create thumbnail
+            logger.info("Creating thumbnail...")
             thumbnail = optimizer.create_thumbnail()
             if thumbnail:
                 thumb_filename = f"thumb_{Path(input_path).stem}.jpg"
@@ -297,6 +330,7 @@ def optimize_satellite_image_file(satellite_image_instance) -> bool:
                     ContentFile(thumb_buffer.read()),
                     save=False
                 )
+                logger.info(f"Thumbnail created successfully: {thumb_filename}")
         
         # Update status to optimized
         satellite_image_instance.status = 'optimized'
@@ -306,7 +340,7 @@ def optimize_satellite_image_file(satellite_image_instance) -> bool:
         return True
     
     except Exception as e:
-        logger.error(f"Error optimizing satellite image: {str(e)}")
+        logger.error(f"Error optimizing satellite image: {str(e)}", exc_info=True)
         satellite_image_instance.status = 'failed'
         satellite_image_instance.processing_error = str(e)
         satellite_image_instance.save(update_fields=['status', 'processing_error'])

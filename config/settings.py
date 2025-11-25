@@ -241,9 +241,13 @@ REST_FRAMEWORK = {
     }
 }
 
-# Security settings for production
-if not DEBUG:
-    SECURE_SSL_REDIRECT = True
+# Security settings
+# Allow opting into SSL redirect via the environment. Default is disabled for
+# local development to avoid the dev server returning TLS handshake bytes
+# (which cause "You're accessing the development server over HTTPS" errors).
+SECURE_SSL_REDIRECT = os.environ.get('SECURE_SSL_REDIRECT', 'False').lower() == 'true'
+
+if SECURE_SSL_REDIRECT:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_BROWSER_XSS_FILTER = True

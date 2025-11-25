@@ -28,12 +28,14 @@ class SatelliteImage(models.Model):
         upload_to='satellite/optimized/%Y/%m/',
         blank=True,
         null=True,
+        max_length=500,
         help_text='Cloud-optimized GeoTIFF (COG)'
     )
     thumbnail = models.ImageField(
         upload_to='satellite/thumbnails/%Y/%m/',
         blank=True,
-        null=True
+        null=True,
+        max_length=500
     )
     
     # Geospatial information
