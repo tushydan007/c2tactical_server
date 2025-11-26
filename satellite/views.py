@@ -13,6 +13,7 @@ import logging
 
 from .models import SatelliteImage, AnalysisResult, ThreatDetection
 from .serializers import (
+    SatelliteImageUploadSerializer,
     SatelliteImageListSerializer,
     SatelliteImageDetailSerializer,
     AnalysisResultSerializer,
@@ -23,9 +24,10 @@ from .tasks import run_satellite_analysis
 logger = logging.getLogger(__name__)
 
 
-class SatelliteImageViewSet(viewsets.ReadOnlyModelViewSet):
+class SatelliteImageViewSet(viewsets.ModelViewSet):
     """
-    ViewSet for viewing satellite images.
+    ViewSet for satellite images.
+    Supports viewing, uploading, and analyzing satellite images.
     Provides optimized queries with caching for performance.
     """
     
@@ -37,7 +39,9 @@ class SatelliteImageViewSet(viewsets.ReadOnlyModelViewSet):
     ordering = ['-upload_date']
     
     def get_serializer_class(self):
-        if self.action == 'retrieve':
+        if self.action in ['create', 'update', 'partial_update']:
+            return SatelliteImageUploadSerializer
+        elif self.action == 'retrieve':
             return SatelliteImageDetailSerializer
         return SatelliteImageListSerializer
     
@@ -66,6 +70,13 @@ class SatelliteImageViewSet(viewsets.ReadOnlyModelViewSet):
     def list(self, request, *args, **kwargs):
         """Cached list endpoint"""
         return super().list(request, *args, **kwargs)
+    
+    def perform_create(self, serializer):
+        """Set the uploaded_by field and ensure status is 'uploaded'"""
+        serializer.save(
+            uploaded_by=self.request.user,
+            status='uploaded'
+        )
     
     @action(detail=True, methods=['post'])
     def analyze(self, request, pk=None):

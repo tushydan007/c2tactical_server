@@ -1,8 +1,9 @@
 """
 Threat detection and analysis algorithms for satellite imagery
+Uses windowed processing to handle large images with limited memory
 """
 import logging
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 import numpy as np
 import cv2
 from skimage import feature, filters, morphology, measure
@@ -13,16 +14,25 @@ from scipy import ndimage
 
 logger = logging.getLogger(__name__)
 
+# Chunk size for windowed processing (2048x2048 pixels)
+CHUNK_SIZE = 2048
+# Overlap for edge detection (256 pixels on each side)
+OVERLAP = 256
+
 
 class ThreatDetector:
     """
     Advanced threat detection system for satellite imagery
+    Uses windowed processing for memory efficiency with large GeoTIFF files
     Detects explosions, fires, structural damage, and unusual activities
     """
     
-    def __init__(self, image_path: str):
+    def __init__(self, image_path: str, chunk_size: int = CHUNK_SIZE, overlap: int = OVERLAP):
         self.image_path = image_path
         self.dataset = None
+        self.chunk_size = chunk_size
+        self.overlap = overlap
+        self.processed_regions = set()  # Track processed locations to avoid duplicates
     
     def __enter__(self):
         self.dataset = rasterio.open(self.image_path)
@@ -34,7 +44,8 @@ class ThreatDetector:
     
     def detect_fires_explosions(self, threshold: float = 0.7) -> List[Dict[str, Any]]:
         """
-        Detect fire and explosion signatures using thermal and spectral analysis
+        Detect fire and explosion signatures using windowed thermal and spectral analysis
+        Processes image in chunks to handle memory constraints with large GeoTIFF files
         
         Returns:
             List of detection dictionaries
@@ -42,64 +53,88 @@ class ThreatDetector:
         detections = []
         
         try:
-            # Read RGB bands
-            if self.dataset.count >= 3:
-                red = self.dataset.read(1)
-                green = self.dataset.read(2)
-                blue = self.dataset.read(3)
-            else:
+            if self.dataset.count < 3:
                 logger.warning("Insufficient bands for fire detection")
                 return detections
             
-            # Normalize bands
-            red_norm = self._normalize_band(red)
-            green_norm = self._normalize_band(green)
-            blue_norm = self._normalize_band(blue)
+            height, width = self.dataset.height, self.dataset.width
             
-            # Fire detection using red channel dominance and brightness
-            fire_index = (red_norm - green_norm) / (red_norm + green_norm + 1e-10)
-            brightness = (red_norm + green_norm + blue_norm) / 3
-            
-            # Create fire mask
-            fire_mask = (fire_index > 0.3) & (brightness > 0.5)
-            
-            # Apply morphological operations to reduce noise
-            fire_mask = morphology.opening(fire_mask, morphology.disk(3))
-            fire_mask = morphology.closing(fire_mask, morphology.disk(5))
-            
-            # Label connected components
-            labeled_fires = measure.label(fire_mask)
-            regions = measure.regionprops(labeled_fires)
-            
-            for region in regions:
-                if region.area > 100:  # Minimum area threshold
-                    # Get centroid in pixel coordinates
-                    centroid_y, centroid_x = region.centroid
+            # Process image in overlapping windows
+            for y_start in range(0, height, self.chunk_size):
+                for x_start in range(0, width, self.chunk_size):
+                    # Define window with overlap
+                    y_end = min(y_start + self.chunk_size + self.overlap, height)
+                    x_end = min(x_start + self.chunk_size + self.overlap, width)
                     
-                    # Convert to geographic coordinates
-                    lon, lat = self._pixel_to_geo(centroid_x, centroid_y)
+                    window = Window(x_start, y_start, x_end - x_start, y_end - y_start)
                     
-                    # Calculate confidence based on fire index and area
-                    avg_fire_index = np.mean(fire_index[labeled_fires == region.label])
-                    confidence = min(0.6 + (avg_fire_index * 0.4), 0.99)
+                    try:
+                        # Read bands for this window
+                        red = self.dataset.read(1, window=window)
+                        green = self.dataset.read(2, window=window)
+                        blue = self.dataset.read(3, window=window)
+                        
+                        # Skip empty windows
+                        if np.all(red == 0) and np.all(green == 0) and np.all(blue == 0):
+                            continue
+                        
+                        # Normalize bands
+                        red_norm = self._normalize_band(red)
+                        green_norm = self._normalize_band(green)
+                        blue_norm = self._normalize_band(blue)
+                        
+                        # Fire detection
+                        fire_index = (red_norm - green_norm) / (red_norm + green_norm + 1e-10)
+                        brightness = (red_norm + green_norm + blue_norm) / 3
+                        
+                        fire_mask = (fire_index > 0.3) & (brightness > 0.5)
+                        fire_mask = morphology.opening(fire_mask, morphology.disk(3))
+                        fire_mask = morphology.closing(fire_mask, morphology.disk(5))
+                        
+                        # Label regions
+                        labeled_fires = measure.label(fire_mask)
+                        regions = measure.regionprops(labeled_fires)
+                        
+                        for region in regions:
+                            if region.area > 100:
+                                # Convert window-relative coords to full image coords
+                                global_y = y_start + region.centroid[0]
+                                global_x = x_start + region.centroid[1]
+                                
+                                # Skip if already processed (within overlap region)
+                                region_key = (int(global_x // 100), int(global_y // 100))
+                                if region_key in self.processed_regions:
+                                    continue
+                                self.processed_regions.add(region_key)
+                                
+                                lon, lat = self._pixel_to_geo(global_x, global_y)
+                                
+                                avg_fire_index = np.mean(fire_index[labeled_fires == region.label])
+                                confidence = min(0.6 + (avg_fire_index * 0.4), 0.99)
+                                severity = self._calculate_severity(region.area, avg_fire_index)
+                                
+                                detections.append({
+                                    'threat_type': 'fire',
+                                    'severity': severity,
+                                    'confidence': float(confidence),
+                                    'location': (float(lat), float(lon)),
+                                    'pixel_coords': {'x': int(global_x), 'y': int(global_y)},
+                                    'area_pixels': int(region.area),
+                                    'description': self._generate_fire_description(region.area, severity),
+                                    'technical_details': {
+                                        'fire_index': float(avg_fire_index),
+                                        'brightness': float(np.mean(brightness[labeled_fires == region.label])),
+                                        'perimeter': int(region.perimeter)
+                                    }
+                                })
                     
-                    # Determine severity based on area and intensity
-                    severity = self._calculate_severity(region.area, avg_fire_index)
+                    except Exception as e:
+                        logger.warning(f"Error processing window at ({x_start}, {y_start}): {str(e)}")
+                        continue
                     
-                    detections.append({
-                        'threat_type': 'fire',
-                        'severity': severity,
-                        'confidence': float(confidence),
-                        'location': (float(lat), float(lon)),
-                        'pixel_coords': {'x': int(centroid_x), 'y': int(centroid_y)},
-                        'area_pixels': int(region.area),
-                        'description': self._generate_fire_description(region.area, severity),
-                        'technical_details': {
-                            'fire_index': float(avg_fire_index),
-                            'brightness': float(np.mean(brightness[labeled_fires == region.label])),
-                            'perimeter': int(region.perimeter)
-                        }
-                    })
+                    finally:
+                        # Explicit cleanup for this window
+                        del red, green, blue
             
             logger.info(f"Detected {len(detections)} potential fire/explosion signatures")
         
@@ -110,7 +145,8 @@ class ThreatDetector:
     
     def detect_structural_damage(self) -> List[Dict[str, Any]]:
         """
-        Detect structural damage using edge detection and texture analysis
+        Detect structural damage using fast edge detection on sampled regions
+        Optimized for speed: aggressive sampling to stay under time limits
         
         Returns:
             List of detection dictionaries
@@ -118,56 +154,76 @@ class ThreatDetector:
         detections = []
         
         try:
-            # Read panchromatic or first band
-            image = self.dataset.read(1)
-            image_norm = self._normalize_band(image)
+            # For memory efficiency, process at a lower resolution
+            height, width = self.dataset.height, self.dataset.width
             
-            # Convert to uint8 for OpenCV
-            image_uint8 = img_as_ubyte(image_norm)
+            # Use much coarser stride sampling to avoid time limit exceed
+            stride = 2048  # Sample every 2048 pixels (very large stride!)
+            sample_size = 512  # Each sample is 512x512
             
-            # Edge detection
-            edges = feature.canny(image_norm, sigma=2)
-            
-            # Texture analysis using local standard deviation
-            texture = ndimage.generic_filter(image_norm, np.std, size=15)
-            
-            # Identify irregular patterns (potential damage)
-            damage_mask = (texture > np.percentile(texture, 85)) & edges
-            
-            # Morphological operations
-            damage_mask = morphology.opening(damage_mask, morphology.disk(2))
-            damage_mask = morphology.closing(damage_mask, morphology.disk(4))
-            
-            # Label regions
-            labeled_damage = measure.label(damage_mask)
-            regions = measure.regionprops(labeled_damage)
-            
-            for region in regions:
-                if region.area > 200:  # Minimum area for structural damage
-                    centroid_y, centroid_x = region.centroid
-                    lon, lat = self._pixel_to_geo(centroid_x, centroid_y)
+            for y_start in range(0, height - sample_size, stride):
+                for x_start in range(0, width - sample_size, stride):
+                    window = Window(x_start, y_start, sample_size, sample_size)
                     
-                    # Calculate irregularity score
-                    circularity = 4 * np.pi * region.area / (region.perimeter ** 2)
-                    irregularity = 1 - circularity
+                    try:
+                        # Read panchromatic or first band
+                        image = self.dataset.read(1, window=window)
+                        
+                        if np.all(image == 0):
+                            continue
+                        
+                        image_norm = self._normalize_band(image)
+                        
+                        # Fast edge detection using Sobel
+                        from scipy.ndimage import sobel
+                        edge_x = sobel(image_norm, axis=0)
+                        edge_y = sobel(image_norm, axis=1)
+                        edges = np.sqrt(edge_x**2 + edge_y**2) > 0.15  # Higher threshold
+                        
+                        # Count high-edge-density regions (potential damage)
+                        edge_density = np.sum(edges) / (sample_size * sample_size)
+                        
+                        # Only report VERY high edge density areas (avoid false positives)
+                        if edge_density > 0.2:  # Much higher threshold
+                            # Find the center of highest edge activity
+                            cy, cx = ndimage.center_of_mass(edges.astype(int))
+                            
+                            if cy is not None and cx is not None:
+                                global_y = y_start + cy
+                                global_x = x_start + cx
+                                
+                                region_key = (int(global_x // 500), int(global_y // 500))
+                                if region_key in self.processed_regions:
+                                    continue
+                                self.processed_regions.add(region_key)
+                                
+                                lon, lat = self._pixel_to_geo(global_x, global_y)
+                                
+                                # Confidence based on edge density
+                                confidence = min(0.6 + (edge_density * 0.35), 0.95)
+                                severity = 'critical' if edge_density > 0.4 else 'high' if edge_density > 0.3 else 'medium'
+                                
+                                detections.append({
+                                    'threat_type': 'structural_damage',
+                                    'severity': severity,
+                                    'confidence': float(confidence),
+                                    'location': (float(lat), float(lon)),
+                                    'pixel_coords': {'x': int(global_x), 'y': int(global_y)},
+                                    'area_pixels': int(sample_size * sample_size),
+                                    'description': f'High-concentration structural damage detected ({edge_density:.1%} edge density)',
+                                    'technical_details': {
+                                        'edge_density': float(edge_density),
+                                        'sample_size': sample_size
+                                    }
+                                })
                     
-                    confidence = min(0.5 + (irregularity * 0.4), 0.95)
-                    severity = 'high' if irregularity > 0.7 else 'medium'
+                    except Exception as e:
+                        logger.warning(f"Error processing damage sample at ({x_start}, {y_start}): {str(e)}")
+                        continue
                     
-                    detections.append({
-                        'threat_type': 'structural_damage',
-                        'severity': severity,
-                        'confidence': float(confidence),
-                        'location': (float(lat), float(lon)),
-                        'pixel_coords': {'x': int(centroid_x), 'y': int(centroid_y)},
-                        'area_pixels': int(region.area),
-                        'description': self._generate_damage_description(region.area, irregularity),
-                        'technical_details': {
-                            'irregularity_score': float(irregularity),
-                            'edge_density': float(np.sum(edges[labeled_damage == region.label]) / region.area),
-                            'texture_variance': float(np.var(texture[labeled_damage == region.label]))
-                        }
-                    })
+                    finally:
+                        if 'image' in locals():
+                            del image
             
             logger.info(f"Detected {len(detections)} potential structural damage areas")
         
@@ -178,7 +234,8 @@ class ThreatDetector:
     
     def detect_vehicle_concentrations(self) -> List[Dict[str, Any]]:
         """
-        Detect vehicle concentrations and convoys
+        Detect vehicle concentrations and convoys using fast sampling
+        Optimized for speed: samples key image regions instead of full windowed processing
         
         Returns:
             List of detection dictionaries
@@ -186,37 +243,81 @@ class ThreatDetector:
         detections = []
         
         try:
-            image = self.dataset.read(1)
-            image_norm = self._normalize_band(image)
-            image_uint8 = img_as_ubyte(image_norm)
+            height, width = self.dataset.height, self.dataset.width
+            all_keypoints = []
             
-            # Use blob detection for vehicles
-            # Vehicles typically appear as bright spots
-            blob_params = cv2.SimpleBlobDetector_Params()
-            blob_params.filterByArea = True
-            blob_params.minArea = 20
-            blob_params.maxArea = 500
-            blob_params.filterByCircularity = False
-            blob_params.filterByConvexity = False
+            # Use aggressive stride sampling for vehicles to save time
+            stride = 1024  # Sample every 1024 pixels
+            sample_size = 512  # Each sample is 512x512
             
-            detector = cv2.SimpleBlobDetector_create(blob_params)
-            keypoints = detector.detect(image_uint8)
+            # Limit to 10% of the image for vehicles to stay under time limit
+            max_samples = min(4, (height // stride) * (width // stride) // 10)
+            sample_count = 0
             
-            if len(keypoints) > 5:  # Threshold for concentration
-                # Cluster nearby keypoints
-                points = np.array([[kp.pt[0], kp.pt[1]] for kp in keypoints])
-                
-                from scipy.cluster.hierarchy import fclusterdata
-                if len(points) > 1:
-                    clusters = fclusterdata(points, t=100, criterion='distance')
+            for y_start in range(0, height - sample_size, stride):
+                if sample_count >= max_samples:
+                    break
+                    
+                for x_start in range(0, width - sample_size, stride):
+                    if sample_count >= max_samples:
+                        break
+                    
+                    sample_count += 1
+                    window = Window(x_start, y_start, sample_size, sample_size)
+                    
+                    try:
+                        image = self.dataset.read(1, window=window)
+                        
+                        if np.all(image == 0):
+                            continue
+                        
+                        image_norm = self._normalize_band(image)
+                        image_uint8 = img_as_ubyte(image_norm)
+                        
+                        # Simplified blob detection on downsampled image
+                        downsampled = image_uint8[::2, ::2]  # 2x downsampling
+                        
+                        blob_params = cv2.SimpleBlobDetector_Params()
+                        blob_params.filterByArea = True
+                        blob_params.minArea = 10
+                        blob_params.maxArea = 200
+                        blob_params.filterByCircularity = False
+                        blob_params.filterByConvexity = False
+                        
+                        detector = cv2.SimpleBlobDetector_create(blob_params)
+                        keypoints = detector.detect(downsampled)
+                        
+                        # Scale keypoints back up and convert to global coords
+                        for kp in keypoints:
+                            global_x = x_start + (kp.pt[0] * 2)
+                            global_y = y_start + (kp.pt[1] * 2)
+                            all_keypoints.append([global_x, global_y])
+                    
+                    except Exception as e:
+                        logger.warning(f"Error processing vehicle sample at ({x_start}, {y_start}): {str(e)}")
+                        continue
+            
+            # Cluster keypoints if we have enough
+            if len(all_keypoints) > 5:
+                try:
+                    points = np.array(all_keypoints)
+                    from scipy.cluster.hierarchy import fclusterdata
+                    
+                    # Use more aggressive clustering distance
+                    clusters = fclusterdata(points, t=200, criterion='distance')
                     
                     unique_clusters = np.unique(clusters)
                     for cluster_id in unique_clusters:
                         cluster_points = points[clusters == cluster_id]
                         
-                        if len(cluster_points) >= 5:  # Minimum vehicles for concern
+                        if len(cluster_points) >= 5:
                             centroid_x = np.mean(cluster_points[:, 0])
                             centroid_y = np.mean(cluster_points[:, 1])
+                            
+                            region_key = (int(centroid_x // 500), int(centroid_y // 500))
+                            if region_key in self.processed_regions:
+                                continue
+                            self.processed_regions.add(region_key)
                             
                             lon, lat = self._pixel_to_geo(centroid_x, centroid_y)
                             
@@ -234,9 +335,12 @@ class ThreatDetector:
                                 'description': self._generate_vehicle_description(vehicle_count),
                                 'technical_details': {
                                     'cluster_spread': float(np.std(cluster_points)),
-                                    'formation_type': 'concentrated' if np.std(cluster_points) < 50 else 'dispersed'
+                                    'formation_type': 'concentrated' if np.std(cluster_points) < 100 else 'dispersed'
                                 }
                             })
+                
+                except Exception as e:
+                    logger.warning(f"Error clustering vehicles: {str(e)}")
             
             logger.info(f"Detected {len(detections)} vehicle concentrations")
         

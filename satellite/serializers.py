@@ -3,6 +3,18 @@ from rest_framework_gis.serializers import GeoFeatureModelSerializer
 from .models import SatelliteImage, AnalysisResult, ThreatDetection, AnalysisLog
 
 
+class SatelliteImageUploadSerializer(serializers.ModelSerializer):
+    """Serializer for uploading satellite images"""
+    
+    class Meta:
+        model = SatelliteImage
+        fields = [
+            'id', 'name', 'description', 'original_image', 
+            'acquisition_date', 'upload_date'
+        ]
+        read_only_fields = ['id', 'upload_date']
+
+
 class SatelliteImageListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for listing satellite images"""
     
