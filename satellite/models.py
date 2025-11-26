@@ -37,6 +37,13 @@ class SatelliteImage(models.Model):
         null=True,
         max_length=500
     )
+    map_overlay = models.ImageField(
+        upload_to='satellite/overlays/%Y/%m/',
+        blank=True,
+        null=True,
+        max_length=500,
+        help_text='PNG image for map overlay display'
+    )
     
     # Geospatial information
     bounds = models.PolygonField(geography=True, null=True, blank=True)
@@ -120,6 +127,12 @@ class SatelliteImage(models.Model):
             try:
                 if os.path.isfile(self.thumbnail.path):
                     os.remove(self.thumbnail.path)
+            except Exception:
+                pass
+        if self.map_overlay:
+            try:
+                if os.path.isfile(self.map_overlay.path):
+                    os.remove(self.map_overlay.path)
             except Exception:
                 pass
         super().delete(*args, **kwargs)

@@ -8,6 +8,7 @@ class SatelliteImageListSerializer(serializers.ModelSerializer):
     
     image_url = serializers.SerializerMethodField()
     thumbnail_url = serializers.SerializerMethodField()
+    map_overlay_url = serializers.SerializerMethodField()
     bounds = serializers.SerializerMethodField()
     uploaded_by_email = serializers.EmailField(source='uploaded_by.email', read_only=True)
     
@@ -16,22 +17,54 @@ class SatelliteImageListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'upload_date', 'acquisition_date', 'status',
             'analyzed', 'analysis_count', 'image_url', 'thumbnail_url',
-            'bounds', 'resolution', 'file_size', 'uploaded_by_email'
+            'map_overlay_url', 'bounds', 'resolution', 'file_size', 'uploaded_by_email'
         ]
         read_only_fields = fields
     
     def get_image_url(self, obj):
         request = self.context.get('request')
-        if obj.optimized_image and request:
-            return request.build_absolute_uri(obj.optimized_image.url)
-        elif obj.original_image and request:
-            return request.build_absolute_uri(obj.original_image.url)
+        try:
+            if obj.optimized_image and request:
+                return request.build_absolute_uri(obj.optimized_image.url)
+            elif obj.original_image and request:
+                return request.build_absolute_uri(obj.original_image.url)
+        except Exception as e:
+            # Fallback to relative URL if build_absolute_uri fails
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to build absolute URI for image {obj.id}: {str(e)}")
+            if obj.optimized_image:
+                return obj.optimized_image.url
+            elif obj.original_image:
+                return obj.original_image.url
         return None
     
     def get_thumbnail_url(self, obj):
         request = self.context.get('request')
-        if obj.thumbnail and request:
-            return request.build_absolute_uri(obj.thumbnail.url)
+        try:
+            if obj.thumbnail and request:
+                return request.build_absolute_uri(obj.thumbnail.url)
+        except Exception as e:
+            # Fallback to relative URL if build_absolute_uri fails
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to build absolute URI for thumbnail {obj.id}: {str(e)}")
+            if obj.thumbnail:
+                return obj.thumbnail.url
+        return None
+    
+    def get_map_overlay_url(self, obj):
+        request = self.context.get('request')
+        try:
+            if obj.map_overlay and request:
+                return request.build_absolute_uri(obj.map_overlay.url)
+        except Exception as e:
+            # Fallback to relative URL if build_absolute_uri fails
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to build absolute URI for map overlay {obj.id}: {str(e)}")
+            if obj.map_overlay:
+                return obj.map_overlay.url
         return None
     
     def get_bounds(self, obj):
@@ -43,6 +76,7 @@ class SatelliteImageDetailSerializer(serializers.ModelSerializer):
     
     image_url = serializers.SerializerMethodField()
     thumbnail_url = serializers.SerializerMethodField()
+    map_overlay_url = serializers.SerializerMethodField()
     bounds = serializers.SerializerMethodField()
     center = serializers.SerializerMethodField()
     uploaded_by_email = serializers.EmailField(source='uploaded_by.email', read_only=True)
@@ -59,16 +93,48 @@ class SatelliteImageDetailSerializer(serializers.ModelSerializer):
     
     def get_image_url(self, obj):
         request = self.context.get('request')
-        if obj.optimized_image and request:
-            return request.build_absolute_uri(obj.optimized_image.url)
-        elif obj.original_image and request:
-            return request.build_absolute_uri(obj.original_image.url)
+        try:
+            if obj.optimized_image and request:
+                return request.build_absolute_uri(obj.optimized_image.url)
+            elif obj.original_image and request:
+                return request.build_absolute_uri(obj.original_image.url)
+        except Exception as e:
+            # Fallback to relative URL if build_absolute_uri fails
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to build absolute URI for image {obj.id}: {str(e)}")
+            if obj.optimized_image:
+                return obj.optimized_image.url
+            elif obj.original_image:
+                return obj.original_image.url
         return None
     
     def get_thumbnail_url(self, obj):
         request = self.context.get('request')
-        if obj.thumbnail and request:
-            return request.build_absolute_uri(obj.thumbnail.url)
+        try:
+            if obj.thumbnail and request:
+                return request.build_absolute_uri(obj.thumbnail.url)
+        except Exception as e:
+            # Fallback to relative URL if build_absolute_uri fails
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to build absolute URI for thumbnail {obj.id}: {str(e)}")
+            if obj.thumbnail:
+                return obj.thumbnail.url
+        return None
+    
+    def get_map_overlay_url(self, obj):
+        request = self.context.get('request')
+        try:
+            if obj.map_overlay and request:
+                return request.build_absolute_uri(obj.map_overlay.url)
+        except Exception as e:
+            # Fallback to relative URL if build_absolute_uri fails
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to build absolute URI for map overlay {obj.id}: {str(e)}")
+            if obj.map_overlay:
+                return obj.map_overlay.url
         return None
     
     def get_bounds(self, obj):

@@ -237,6 +237,74 @@ class ImageOptimizer:
         except Exception as e:
             logger.error(f"Error creating thumbnail: {str(e)}")
             return None
+    
+    def create_map_overlay_png(self, max_size: Tuple[int, int] = (2048, 2048),
+                               bands: Optional[Tuple[int, int, int]] = None) -> Optional[Image.Image]:
+        """
+        Create a full-resolution PNG for map overlay display
+        
+        Args:
+            max_size: Maximum dimensions (width, height) for the PNG
+            bands: Band indices for RGB (e.g., (3, 2, 1) for Landsat true color)
+        
+        Returns:
+            PIL Image or None
+        """
+        if not self.src_dataset:
+            raise ValueError("Dataset not opened. Use context manager.")
+        
+        try:
+            # Determine bands to use
+            if bands is None:
+                if self.src_dataset.count >= 3:
+                    bands = (1, 2, 3)  # Default to first three bands
+                else:
+                    bands = (1,) * 3  # Use first band for grayscale
+            
+            # Calculate dimensions, respecting max size but maintaining aspect ratio
+            width_ratio = max_size[0] / self.src_dataset.width
+            height_ratio = max_size[1] / self.src_dataset.height
+            scale_factor = min(width_ratio, height_ratio, 1.0)  # Don't upscale
+            
+            png_width = int(self.src_dataset.width * scale_factor)
+            png_height = int(self.src_dataset.height * scale_factor)
+            
+            logger.info(f"Creating map overlay PNG: {png_width}x{png_height}")
+            
+            # Read and resample bands
+            overlay_data = []
+            for band_idx in bands:
+                if band_idx <= self.src_dataset.count:
+                    data = self.src_dataset.read(
+                        band_idx,
+                        out_shape=(png_height, png_width),
+                        resampling=Resampling.average
+                    )
+                    
+                    # Normalize to 0-255
+                    data_min = np.nanpercentile(data, 2)
+                    data_max = np.nanpercentile(data, 98)
+                    data_normalized = np.clip(
+                        (data - data_min) / (data_max - data_min) * 255,
+                        0,
+                        255
+                    ).astype(np.uint8)
+                    
+                    overlay_data.append(data_normalized)
+            
+            # Stack bands
+            if len(overlay_data) == 3:
+                rgb_array = np.stack(overlay_data, axis=2)
+                overlay_png = Image.fromarray(rgb_array, mode='RGB')
+            else:
+                overlay_png = Image.fromarray(overlay_data[0], mode='L')
+            
+            logger.info(f"Created map overlay PNG with size {png_width}x{png_height}")
+            return overlay_png
+        
+        except Exception as e:
+            logger.error(f"Error creating map overlay PNG: {str(e)}")
+            return None
 
 
 def optimize_satellite_image_file(satellite_image_instance) -> bool:
@@ -331,6 +399,27 @@ def optimize_satellite_image_file(satellite_image_instance) -> bool:
                     save=False
                 )
                 logger.info(f"Thumbnail created successfully: {thumb_filename}")
+            
+            # Create map overlay PNG
+            logger.info("Creating map overlay PNG...")
+            overlay_png = optimizer.create_map_overlay_png()
+            if overlay_png:
+                overlay_filename = f"overlay_{Path(input_path).stem}.png"
+                
+                # Save overlay to BytesIO
+                import io
+                overlay_buffer = io.BytesIO()
+                overlay_png.save(overlay_buffer, format='PNG', optimize=True)
+                overlay_buffer.seek(0)
+                
+                satellite_image_instance.map_overlay.save(
+                    overlay_filename,
+                    ContentFile(overlay_buffer.read()),
+                    save=False
+                )
+                logger.info(f"Map overlay PNG created successfully: {overlay_filename}")
+            else:
+                logger.warning("Failed to create map overlay PNG")
         
         # Update status to optimized
         satellite_image_instance.status = 'optimized'
