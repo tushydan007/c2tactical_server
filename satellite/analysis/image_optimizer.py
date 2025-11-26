@@ -12,6 +12,7 @@ from rasterio.io import MemoryFile
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from rasterio.enums import ColorInterp
 from rasterio.shutil import copy as rio_copy
+from rasterio.windows import Window
 from PIL import Image
 import numpy as np
 from django.contrib.gis.geos import Polygon, Point
@@ -106,7 +107,8 @@ class ImageOptimizer:
     def create_cog(self, output_path: str, compression: str = 'JPEG', 
                    quality: int = 85, overview_levels: Optional[list] = None) -> bool:
         """
-        Create a cloud-optimized GeoTIFF (COG) from the input image
+        Create a cloud-optimized GeoTIFF (COG) from the input image using windowed reading
+        Processes image in chunks to handle large files without loading entire bands into memory
         
         Args:
             output_path: Path where the COG will be saved
@@ -151,12 +153,31 @@ class ImageOptimizer:
             # Create output directory if it doesn't exist
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
-            # Write COG with internal tiling
+            # Write COG with windowed reading to avoid loading entire image into memory
+            from rasterio.windows import Window
+            
             with rasterio.open(output_path, 'w', **profile) as dst:
-                # Copy data
+                # Copy data in windows to avoid memory issues with large files
+                window_size = 1024
+                height = self.src_dataset.height
+                width = self.src_dataset.width
+                
                 for band_idx in range(1, self.src_dataset.count + 1):
-                    data = self.src_dataset.read(band_idx)
-                    dst.write(data, band_idx)
+                    logger.info(f"Processing band {band_idx}/{self.src_dataset.count}")
+                    
+                    # Process band in windows
+                    for y_start in range(0, height, window_size):
+                        for x_start in range(0, width, window_size):
+                            # Calculate window dimensions
+                            y_end = min(y_start + window_size, height)
+                            x_end = min(x_start + window_size, width)
+                            window = Window(x_start, y_start, x_end - x_start, y_end - y_start)
+                            
+                            # Read window data
+                            data = self.src_dataset.read(band_idx, window=window)
+                            
+                            # Write window data
+                            dst.write(data, band_idx, window=window)
                 
                 # Copy metadata
                 dst.update_tags(**self.src_dataset.tags())
@@ -176,6 +197,7 @@ class ImageOptimizer:
                         bands: Optional[Tuple[int, int, int]] = None) -> Optional[Image.Image]:
         """
         Create a thumbnail from the satellite image
+        Uses downsampling during read to avoid memory issues
         
         Args:
             max_size: Maximum dimensions (width, height)
@@ -203,10 +225,11 @@ class ImageOptimizer:
             thumb_width = int(self.src_dataset.width * scale_factor)
             thumb_height = int(self.src_dataset.height * scale_factor)
             
-            # Read and resample bands
+            # Read and resample bands using out_shape for memory efficiency
             thumbnail_data = []
             for band_idx in bands:
                 if band_idx <= self.src_dataset.count:
+                    # Downsample during read
                     data = self.src_dataset.read(
                         band_idx,
                         out_shape=(thumb_height, thumb_width),
@@ -242,6 +265,7 @@ class ImageOptimizer:
                                bands: Optional[Tuple[int, int, int]] = None) -> Optional[Image.Image]:
         """
         Create a full-resolution PNG for map overlay display
+        Uses downsampling to avoid loading full-resolution bands into memory
         
         Args:
             max_size: Maximum dimensions (width, height) for the PNG
@@ -269,12 +293,14 @@ class ImageOptimizer:
             png_width = int(self.src_dataset.width * scale_factor)
             png_height = int(self.src_dataset.height * scale_factor)
             
-            logger.info(f"Creating map overlay PNG: {png_width}x{png_height}")
+            logger.info(f"Creating map overlay PNG: {png_width}x{png_height} (scale: {scale_factor:.2%})")
             
-            # Read and resample bands
+            # Read and resample bands using out_shape parameter to downsample during read
+            # This avoids loading full-resolution data into memory
             overlay_data = []
             for band_idx in bands:
                 if band_idx <= self.src_dataset.count:
+                    # Use out_shape to downsample during read - memory efficient
                     data = self.src_dataset.read(
                         band_idx,
                         out_shape=(png_height, png_width),
