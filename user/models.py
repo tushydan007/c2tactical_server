@@ -6,6 +6,10 @@ from django.contrib.auth.models import (
 from django.db import models
 from django.utils import timezone
 from django.core.validators import EmailValidator, RegexValidator
+from django.conf import settings
+# from django.contrib.auth import get_user_model
+
+# User = get_user_model()
 
 
 class UserManager(BaseUserManager):
@@ -123,3 +127,76 @@ class User(AbstractBaseUser, PermissionsMixin):
         if self.email:
             self.email = self.email.lower().strip()
         super().save(*args, **kwargs)
+
+
+class UserPreferences(models.Model):
+    """User preferences model for storing user settings"""
+    
+    THEME_CHOICES = [
+        ('light', 'Light'),
+        ('dark', 'Dark'),
+        ('system', 'System'),
+    ]
+    
+    LANGUAGE_CHOICES = [
+        ('en', 'English'),
+        ('es', 'Español'),
+        ('fr', 'Français'),
+        ('de', 'Deutsch'),
+    ]
+    
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='preferences',
+        help_text='User associated with these preferences'
+    )
+    
+    # Appearance settings
+    theme = models.CharField(
+        max_length=10,
+        choices=THEME_CHOICES,
+        default='dark',
+        help_text='UI theme preference'
+    )
+    language = models.CharField(
+        max_length=5,
+        choices=LANGUAGE_CHOICES,
+        default='en',
+        help_text='Language preference'
+    )
+    timezone = models.CharField(
+        max_length=50,
+        default='UTC',
+        help_text='Timezone preference'
+    )
+    
+    # Notification settings
+    email_notifications = models.BooleanField(
+        default=True,
+        help_text='Receive email notifications'
+    )
+    push_notifications = models.BooleanField(
+        default=True,
+        help_text='Receive push notifications'
+    )
+    threat_alerts = models.BooleanField(
+        default=True,
+        help_text='Receive critical threat alerts'
+    )
+    weekly_reports = models.BooleanField(
+        default=False,
+        help_text='Receive weekly activity reports'
+    )
+    
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'user_preferences'
+        verbose_name = 'User Preference'
+        verbose_name_plural = 'User Preferences'
+    
+    def __str__(self):
+        return f"Preferences for {self.user.email}"
