@@ -6,13 +6,19 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('satellite', '0003_alter_satelliteimage_optimized_image_and_more'),
+        ("satellite", "0003_alter_satelliteimage_optimized_image_and_more"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='satelliteimage',
-            name='map_overlay',
-            field=models.ImageField(blank=True, help_text='PNG image for map overlay display', max_length=500, null=True, upload_to='satellite/overlays/%Y/%m/'),
+            model_name="satelliteimage",
+            name="map_overlay",
+            field=models.ImageField(
+                blank=True,
+                help_text="PNG image for map overlay display",
+                max_length=500,
+                null=True,
+                upload_to="satellite/overlays/%Y/%m/",
+            ),
         ),
     ]

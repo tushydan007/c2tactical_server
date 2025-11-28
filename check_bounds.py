@@ -3,8 +3,8 @@ import os
 import django
 import sys
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
-sys.path.insert(0, '/app')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+sys.path.insert(0, "/app")
 
 django.setup()
 

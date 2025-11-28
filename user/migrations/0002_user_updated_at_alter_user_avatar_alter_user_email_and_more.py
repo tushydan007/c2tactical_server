@@ -7,58 +7,87 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('auth', '0012_alter_user_first_name_max_length'),
-        ('user', '0001_initial'),
+        ("auth", "0012_alter_user_first_name_max_length"),
+        ("user", "0001_initial"),
     ]
 
     operations = [
         migrations.AddField(
-            model_name='user',
-            name='updated_at',
+            model_name="user",
+            name="updated_at",
             field=models.DateTimeField(auto_now=True),
         ),
         migrations.AlterField(
-            model_name='user',
-            name='avatar',
-            field=models.ImageField(blank=True, help_text='User profile picture (max 5MB)', null=True, upload_to='avatars/%Y/%m/'),
+            model_name="user",
+            name="avatar",
+            field=models.ImageField(
+                blank=True,
+                help_text="User profile picture (max 5MB)",
+                null=True,
+                upload_to="avatars/%Y/%m/",
+            ),
         ),
         migrations.AlterField(
-            model_name='user',
-            name='email',
-            field=models.EmailField(db_index=True, help_text='Email address (used for login)', max_length=255, unique=True, validators=[django.core.validators.EmailValidator()]),
+            model_name="user",
+            name="email",
+            field=models.EmailField(
+                db_index=True,
+                help_text="Email address (used for login)",
+                max_length=255,
+                unique=True,
+                validators=[django.core.validators.EmailValidator()],
+            ),
         ),
         migrations.AlterField(
-            model_name='user',
-            name='first_name',
+            model_name="user",
+            name="first_name",
             field=models.CharField(max_length=150),
         ),
         migrations.AlterField(
-            model_name='user',
-            name='is_active',
-            field=models.BooleanField(default=True, help_text='Designates whether this user should be treated as active.'),
+            model_name="user",
+            name="is_active",
+            field=models.BooleanField(
+                default=True,
+                help_text="Designates whether this user should be treated as active.",
+            ),
         ),
         migrations.AlterField(
-            model_name='user',
-            name='is_staff',
-            field=models.BooleanField(default=False, help_text='Designates whether the user can log into this admin site.'),
+            model_name="user",
+            name="is_staff",
+            field=models.BooleanField(
+                default=False,
+                help_text="Designates whether the user can log into this admin site.",
+            ),
         ),
         migrations.AlterField(
-            model_name='user',
-            name='last_login',
-            field=models.DateTimeField(blank=True, null=True, verbose_name='last login'),
+            model_name="user",
+            name="last_login",
+            field=models.DateTimeField(
+                blank=True, null=True, verbose_name="last login"
+            ),
         ),
         migrations.AlterField(
-            model_name='user',
-            name='last_name',
+            model_name="user",
+            name="last_name",
             field=models.CharField(max_length=150),
         ),
         migrations.AlterField(
-            model_name='user',
-            name='phone_number',
-            field=models.CharField(blank=True, help_text='Contact phone number', max_length=20, validators=[django.core.validators.RegexValidator(message="Phone number must be entered in the format: '+999999999'. Up to 15 digits allowed.", regex='^\\+?1?\\d{9,15}$')]),
+            model_name="user",
+            name="phone_number",
+            field=models.CharField(
+                blank=True,
+                help_text="Contact phone number",
+                max_length=20,
+                validators=[
+                    django.core.validators.RegexValidator(
+                        message="Phone number must be entered in the format: '+999999999'. Up to 15 digits allowed.",
+                        regex="^\\+?1?\\d{9,15}$",
+                    )
+                ],
+            ),
         ),
         migrations.AddIndex(
-            model_name='user',
-            index=models.Index(fields=['is_active'], name='users_is_acti_847b48_idx'),
+            model_name="user",
+            index=models.Index(fields=["is_active"], name="users_is_acti_847b48_idx"),
         ),
     ]

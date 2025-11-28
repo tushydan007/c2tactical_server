@@ -6,35 +6,35 @@
 
 # class UserManager(BaseUserManager):
 #     """Custom user manager for email-based authentication"""
-    
+
 #     def create_user(self, email, password=None, **extra_fields):
 #         """Create and save a regular user with the given email and password"""
 #         if not email:
 #             raise ValueError('The Email field must be set')
-        
+
 #         email = self.normalize_email(email)
 #         user = self.model(email=email, **extra_fields)
 #         user.set_password(password)
 #         user.save(using=self._db)
 #         return user
-    
+
 #     def create_superuser(self, email, password=None, **extra_fields):
 #         """Create and save a superuser with the given email and password"""
 #         extra_fields.setdefault('is_staff', True)
 #         extra_fields.setdefault('is_superuser', True)
 #         extra_fields.setdefault('is_active', True)
-        
+
 #         if extra_fields.get('is_staff') is not True:
 #             raise ValueError('Superuser must have is_staff=True.')
 #         if extra_fields.get('is_superuser') is not True:
 #             raise ValueError('Superuser must have is_superuser=True.')
-        
+
 #         return self.create_user(email, password, **extra_fields)
 
 
 # class User(AbstractBaseUser, PermissionsMixin):
 #     """Custom user model with email as the unique identifier"""
-    
+
 #     email = models.EmailField(
 #         max_length=255,
 #         unique=True,
@@ -43,21 +43,21 @@
 #     )
 #     first_name = models.CharField(max_length=150, blank=True)
 #     last_name = models.CharField(max_length=150, blank=True)
-    
+
 #     # Profile information
 #     rank = models.CharField(max_length=100, blank=True, help_text='Military rank')
 #     unit = models.CharField(max_length=200, blank=True, help_text='Military unit')
 #     phone_number = models.CharField(max_length=20, blank=True)
-    
+
 #     # Status fields
 #     is_active = models.BooleanField(default=True)
 #     is_staff = models.BooleanField(default=False)
 #     is_verified = models.BooleanField(default=False, help_text='Email verification status')
-    
+
 #     # Timestamps
 #     date_joined = models.DateTimeField(default=timezone.now)
 #     last_login = models.DateTimeField(null=True, blank=True)
-    
+
 #     # Profile image
 #     avatar = models.ImageField(
 #         upload_to='avatars/%Y/%m/',
@@ -65,12 +65,12 @@
 #         null=True,
 #         help_text='User profile picture'
 #     )
-    
+
 #     objects = UserManager()
-    
+
 #     USERNAME_FIELD = 'email'
 #     REQUIRED_FIELDS = ['first_name', 'last_name']
-    
+
 #     class Meta:
 #         db_table = 'users'
 #         verbose_name = 'User'
@@ -80,22 +80,25 @@
 #             models.Index(fields=['email']),
 #             models.Index(fields=['-date_joined']),
 #         ]
-    
+
 #     def __str__(self):
 #         return self.email
-    
+
 #     def get_full_name(self):
 #         """Return the user's full name"""
 #         full_name = f"{self.first_name} {self.last_name}".strip()
 #         return full_name or self.email
-    
+
 #     def get_short_name(self):
 #         """Return the user's short name"""
 #         return self.first_name or self.email
 
 
-
-from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
+from django.contrib.auth.models import (
+    AbstractBaseUser,
+    PermissionsMixin,
+    BaseUserManager,
+)
 from django.db import models
 from django.utils import timezone
 from django.core.validators import EmailValidator, RegexValidator
@@ -103,115 +106,114 @@ from django.core.validators import EmailValidator, RegexValidator
 
 class UserManager(BaseUserManager):
     """Custom user manager for email-based authentication"""
-    
+
     def create_user(self, email, password=None, **extra_fields):
         """Create and save a regular user with the given email and password"""
         if not email:
-            raise ValueError('The Email field must be set')
-        
+            raise ValueError("The Email field must be set")
+
         email = self.normalize_email(email)
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
         return user
-    
+
     def create_superuser(self, email, password=None, **extra_fields):
         """Create and save a superuser with the given email and password"""
-        extra_fields.setdefault('is_staff', True)
-        extra_fields.setdefault('is_superuser', True)
-        extra_fields.setdefault('is_active', True)
-        extra_fields.setdefault('is_verified', True)
-        
-        if extra_fields.get('is_staff') is not True:
-            raise ValueError('Superuser must have is_staff=True.')
-        if extra_fields.get('is_superuser') is not True:
-            raise ValueError('Superuser must have is_superuser=True.')
-        
+        extra_fields.setdefault("is_staff", True)
+        extra_fields.setdefault("is_superuser", True)
+        extra_fields.setdefault("is_active", True)
+        extra_fields.setdefault("is_verified", True)
+
+        if extra_fields.get("is_staff") is not True:
+            raise ValueError("Superuser must have is_staff=True.")
+        if extra_fields.get("is_superuser") is not True:
+            raise ValueError("Superuser must have is_superuser=True.")
+
         return self.create_user(email, password, **extra_fields)
 
 
 class User(AbstractBaseUser, PermissionsMixin):
     """Custom user model with email as the unique identifier"""
-    
+
     phone_regex = RegexValidator(
-        regex=r'^\+?1?\d{9,15}$',
-        message="Phone number must be entered in the format: '+999999999'. Up to 15 digits allowed."
+        regex=r"^\+?1?\d{9,15}$",
+        message="Phone number must be entered in the format: '+999999999'. Up to 15 digits allowed.",
     )
-    
+
     email = models.EmailField(
         max_length=255,
         unique=True,
         validators=[EmailValidator()],
-        help_text='Email address (used for login)',
-        db_index=True
+        help_text="Email address (used for login)",
+        db_index=True,
     )
     first_name = models.CharField(max_length=150, blank=False)
     last_name = models.CharField(max_length=150, blank=False)
-    
+
     # Profile information
-    rank = models.CharField(max_length=100, blank=True, help_text='Military rank')
-    unit = models.CharField(max_length=200, blank=True, help_text='Military unit')
+    rank = models.CharField(max_length=100, blank=True, help_text="Military rank")
+    unit = models.CharField(max_length=200, blank=True, help_text="Military unit")
     phone_number = models.CharField(
         validators=[phone_regex],
         max_length=20,
         blank=True,
-        help_text='Contact phone number'
+        help_text="Contact phone number",
     )
-    
+
     # Status fields
     is_active = models.BooleanField(
         default=True,
-        help_text='Designates whether this user should be treated as active.'
+        help_text="Designates whether this user should be treated as active.",
     )
     is_staff = models.BooleanField(
         default=False,
-        help_text='Designates whether the user can log into this admin site.'
+        help_text="Designates whether the user can log into this admin site.",
     )
     is_verified = models.BooleanField(
-        default=False,
-        help_text='Email verification status'
+        default=False, help_text="Email verification status"
     )
-    
+
     # Timestamps
     date_joined = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     # Profile image
     avatar = models.ImageField(
-        upload_to='avatars/%Y/%m/',
+        upload_to="avatars/%Y/%m/",
         blank=True,
         null=True,
-        help_text='User profile picture (max 5MB)'
+        help_text="User profile picture (max 5MB)",
     )
-    
+
     objects = UserManager()
-    
-    USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['first_name', 'last_name']
-    
+
+    USERNAME_FIELD = "email"
+    REQUIRED_FIELDS = ["first_name", "last_name"]
+
     class Meta:
-        db_table = 'users'
-        verbose_name = 'User'
-        verbose_name_plural = 'Users'
-        ordering = ['-date_joined']
+        db_table = "users"
+        verbose_name = "User"
+        verbose_name_plural = "Users"
+        ordering = ["-date_joined"]
         indexes = [
-            models.Index(fields=['email']),
-            models.Index(fields=['-date_joined']),
-            models.Index(fields=['is_active']),
+            models.Index(fields=["email"]),
+            models.Index(fields=["-date_joined"]),
+            models.Index(fields=["is_active"]),
         ]
-    
+
     def __str__(self):
         return self.email
-    
+
     def get_full_name(self):
         """Return the user's full name"""
         full_name = f"{self.first_name} {self.last_name}".strip()
         return full_name or self.email
-    
+
     def get_short_name(self):
         """Return the user's short name"""
         return self.first_name or self.email
-    
+
     def save(self, *args, **kwargs):
         """Override save to normalize email"""
         if self.email:

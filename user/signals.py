@@ -17,7 +17,7 @@ def user_post_save(sender, instance, created, **kwargs):
     """
     if created:
         logger.info(f"New user created: {instance.email}")
-        
+
         # Send welcome email (optional - uncomment when email is configured)
         # try:
         #     send_mail(
@@ -40,7 +40,7 @@ def user_pre_delete(sender, instance, **kwargs):
     Clean up associated files (avatar)
     """
     logger.info(f"Deleting user: {instance.email}")
-    
+
     # Delete avatar file if exists
     if instance.avatar:
         try:

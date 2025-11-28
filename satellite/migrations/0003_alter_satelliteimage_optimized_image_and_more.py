@@ -6,18 +6,29 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('satellite', '0002_alter_analysisresult_initiated_by_and_more'),
+        ("satellite", "0002_alter_analysisresult_initiated_by_and_more"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='satelliteimage',
-            name='optimized_image',
-            field=models.FileField(blank=True, help_text='Cloud-optimized GeoTIFF (COG)', max_length=500, null=True, upload_to='satellite/optimized/%Y/%m/'),
+            model_name="satelliteimage",
+            name="optimized_image",
+            field=models.FileField(
+                blank=True,
+                help_text="Cloud-optimized GeoTIFF (COG)",
+                max_length=500,
+                null=True,
+                upload_to="satellite/optimized/%Y/%m/",
+            ),
         ),
         migrations.AlterField(
-            model_name='satelliteimage',
-            name='thumbnail',
-            field=models.ImageField(blank=True, max_length=500, null=True, upload_to='satellite/thumbnails/%Y/%m/'),
+            model_name="satelliteimage",
+            name="thumbnail",
+            field=models.ImageField(
+                blank=True,
+                max_length=500,
+                null=True,
+                upload_to="satellite/thumbnails/%Y/%m/",
+            ),
         ),
     ]
