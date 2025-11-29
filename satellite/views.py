@@ -26,8 +26,7 @@ logger = logging.getLogger(__name__)
 class SatelliteImageViewSet(viewsets.ModelViewSet):
     """
     ViewSet for satellite images.
-    Supports viewing, uploading, and analyzing satellite images.
-    Provides optimized queries with caching for performance.
+    UPDATED: Now filters images by authenticated user automatically
     """
 
     permission_classes = [IsAuthenticated]
@@ -49,8 +48,14 @@ class SatelliteImageViewSet(viewsets.ModelViewSet):
         return SatelliteImageListSerializer
 
     def get_queryset(self):
-        """Optimized queryset with select_related for performance"""
-        queryset = SatelliteImage.objects.select_related("uploaded_by").all()
+        """
+        UPDATED: Filter images by current user
+        Only return images uploaded by the authenticated user
+        """
+        # Base queryset filtered by current user
+        queryset = SatelliteImage.objects.filter(
+            uploaded_by=self.request.user
+        ).select_related("uploaded_by")
 
         # Filter by status if provided
         status_param = self.request.query_params.get("status", None)
@@ -68,12 +73,6 @@ class SatelliteImageViewSet(viewsets.ModelViewSet):
 
         return queryset
 
-    @method_decorator(cache_page(60 * 5))  # Cache for 5 minutes
-    @method_decorator(vary_on_headers("Authorization"))
-    def list(self, request, *args, **kwargs):
-        """Cached list endpoint"""
-        return super().list(request, *args, **kwargs)
-
     def perform_create(self, serializer):
         """Set the uploaded_by field and ensure status is 'uploaded'"""
         serializer.save(uploaded_by=self.request.user, status="uploaded")
@@ -82,7 +81,7 @@ class SatelliteImageViewSet(viewsets.ModelViewSet):
     def analyze(self, request, pk=None):
         """
         Trigger analysis on a satellite image.
-        This action initiates an asynchronous Celery task.
+        UPDATED: Verify user owns the image before analyzing
         """
         satellite_image = self.get_object()
 
@@ -108,7 +107,7 @@ class SatelliteImageViewSet(viewsets.ModelViewSet):
         try:
             task = run_satellite_analysis.delay(analysis.id)
             logger.info(
-                f"Analysis task {task.id} initiated for image {satellite_image.id}"
+                f"Analysis task {task.id} initiated for image {satellite_image.id} by user {request.user.email}"
             )
 
             return Response(
@@ -134,9 +133,17 @@ class SatelliteImageViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def analyses(self, request, pk=None):
-        """Get all analyses for a specific satellite image"""
+        """
+        Get all analyses for a specific satellite image
+        UPDATED: Verify user owns the image
+        """
         satellite_image = self.get_object()
-        analyses = satellite_image.analyses.all()
+        
+        # Get analyses for this image
+        analyses = satellite_image.analyses.select_related(
+            "initiated_by"
+        ).prefetch_related("detections").all()
+        
         serializer = AnalysisResultSerializer(
             analyses, many=True, context={"request": request}
         )
@@ -146,7 +153,7 @@ class SatelliteImageViewSet(viewsets.ModelViewSet):
 class AnalysisResultViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet for viewing analysis results.
-    Provides detailed analysis data and threat detections.
+    UPDATED: Filter by user's images
     """
 
     serializer_class = AnalysisResultSerializer
@@ -157,18 +164,17 @@ class AnalysisResultViewSet(viewsets.ReadOnlyModelViewSet):
     ordering = ["-created_at"]
 
     def get_queryset(self):
-        """Optimized queryset with prefetch for related objects"""
+        """
+        UPDATED: Only return analyses for images owned by current user
+        """
         return (
-            AnalysisResult.objects.select_related("satellite_image", "initiated_by")
+            AnalysisResult.objects.filter(
+                satellite_image__uploaded_by=self.request.user
+            )
+            .select_related("satellite_image", "initiated_by")
             .prefetch_related("detections", "logs")
             .all()
         )
-
-    @method_decorator(cache_page(60 * 2))  # Cache for 2 minutes
-    @method_decorator(vary_on_headers("Authorization"))
-    def retrieve(self, request, *args, **kwargs):
-        """Cached retrieve endpoint"""
-        return super().retrieve(request, *args, **kwargs)
 
     @action(detail=True, methods=["get"])
     def status_check(self, request, pk=None):
@@ -188,7 +194,7 @@ class AnalysisResultViewSet(viewsets.ReadOnlyModelViewSet):
 class ThreatDetectionViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet for viewing threat detections.
-    Provides filtering by severity, type, and verification status.
+    UPDATED: Filter by user's images
     """
 
     serializer_class = ThreatDetectionSerializer
@@ -199,10 +205,12 @@ class ThreatDetectionViewSet(viewsets.ReadOnlyModelViewSet):
     ordering = ["-detected_at"]
 
     def get_queryset(self):
-        """Optimized queryset with spatial filtering support"""
-        queryset = ThreatDetection.objects.select_related(
-            "analysis", "satellite_image"
-        ).all()
+        """
+        UPDATED: Only return threats for images owned by current user
+        """
+        queryset = ThreatDetection.objects.filter(
+            satellite_image__uploaded_by=self.request.user
+        ).select_related("analysis", "satellite_image")
 
         # Filter by severity levels
         min_severity = self.request.query_params.get("min_severity", None)
@@ -225,12 +233,6 @@ class ThreatDetectionViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(detected_at__lte=date_to)
 
         return queryset
-
-    @method_decorator(cache_page(60 * 1))  # Cache for 1 minute
-    @method_decorator(vary_on_headers("Authorization"))
-    def list(self, request, *args, **kwargs):
-        """Cached list endpoint with shorter cache time for real-time updates"""
-        return super().list(request, *args, **kwargs)
 
     @action(detail=True, methods=["post"])
     def verify(self, request, pk=None):
@@ -270,8 +272,11 @@ class ThreatDetectionViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=["get"])
     def summary(self, request):
-        """Get summary statistics of threat detections"""
-        cache_key = "threat_summary"
+        """
+        Get summary statistics of threat detections
+        UPDATED: Only for current user's images
+        """
+        cache_key = f"threat_summary_{request.user.id}"
         cached_data = cache.get(cache_key)
 
         if cached_data:
